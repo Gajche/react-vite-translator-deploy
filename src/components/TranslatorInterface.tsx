@@ -119,7 +119,6 @@ export function TranslatorInterface() {
 
       setTranslatedText(cleanedResult);
 
-      // Save to memory
       await supabase.from("translation_memory").insert([
         {
           source_text: sourceText,
@@ -129,7 +128,6 @@ export function TranslatorInterface() {
         },
       ]);
 
-      // AUTO-LEARN: Extract and save terms
       await autoExtractAndSaveTerms(
         sourceText,
         cleanedResult,
@@ -155,23 +153,16 @@ export function TranslatorInterface() {
   ) {
     const srcSentences = splitIntoSentences(source);
     const tgtSentences = splitIntoSentences(target);
-
     if (srcSentences.length !== tgtSentences.length) return;
 
     const newTerms: Partial<Terminology>[] = [];
-
     for (let i = 0; i < srcSentences.length; i++) {
-      const src = srcSentences[i];
-      const tgt = tgtSentences[i];
-
-      const srcPhrases = extractNounPhrases(src);
-      const tgtPhrases = extractNounPhrases(tgt);
-
+      const srcPhrases = extractNounPhrases(srcSentences[i]);
+      const tgtPhrases = extractNounPhrases(tgtSentences[i]);
       const max = Math.min(srcPhrases.length, tgtPhrases.length);
       for (let j = 0; j < max; j++) {
         const term = srcPhrases[j].trim();
         const translation = tgtPhrases[j].trim();
-
         if (
           term.length > 2 &&
           translation.length > 2 &&
@@ -226,7 +217,7 @@ export function TranslatorInterface() {
       }, []);
   }
 
-  /* ---------- EXPORT HTML – UNIVERSAL ---------- */
+  /* ---------- EXPORT HTML ---------- */
   function handleExportHTML() {
     if (!translatedText) return alert("No translation");
     if (!selectedRule) return alert("Select a formatting rule");
@@ -248,7 +239,7 @@ export function TranslatorInterface() {
 
   /* ---------- UI ---------- */
   return (
-    <div className="bg-white rounded-lg shadow-md p-6">
+    <div className="bg-white rounded-lg shadow-md p-4 sm:p-6">
       {/* Settings */}
       <div className="flex justify-end mb-4">
         <button
@@ -260,8 +251,8 @@ export function TranslatorInterface() {
       </div>
 
       {showSettings && (
-        <div className="mb-6 p-4 border-2 border-gray-300 rounded-lg bg-gray-50">
-          <h3 className="font-semibold mb-4">Settings</h3>
+        <div className="mb-6 p-4 border border-gray-300 rounded-lg bg-gray-50 text-sm">
+          <h3 className="font-semibold mb-3">Settings</h3>
           <input
             type="password"
             value={geminiApiKey}
@@ -285,25 +276,25 @@ export function TranslatorInterface() {
           />
           <button
             onClick={saveSettings}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            className="w-full sm:w-auto px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
           >
             Save
           </button>
         </div>
       )}
 
-      {/* Language + Translate */}
-      <div className="grid grid-cols-4 gap-4 mb-4">
+      {/* Language + Rule + Translate */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <input
           value={sourceLang}
           onChange={(e) => setSourceLang(e.target.value)}
-          className="p-2 border rounded"
+          className="p-2 border rounded text-sm"
           placeholder="Source (en)"
         />
         <input
           value={targetLang}
           onChange={(e) => setTargetLang(e.target.value)}
-          className="p-2 border rounded"
+          className="p-2 border rounded text-sm"
           placeholder="Target (mk)"
         />
         <select
@@ -313,7 +304,7 @@ export function TranslatorInterface() {
               formattingRules.find((r) => r.id === e.target.value) || null
             )
           }
-          className="p-2 border rounded"
+          className="p-2 border rounded text-sm"
         >
           <option value="">Select Rule</option>
           {formattingRules.map((r) => (
@@ -325,57 +316,55 @@ export function TranslatorInterface() {
         <button
           onClick={handleTranslate}
           disabled={isTranslating}
-          className="flex items-center justify-center gap-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400"
+          className="flex items-center justify-center gap-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400 text-sm h-10"
         >
           {isTranslating ? (
             <>
-              <Loader2 size={20} className="animate-spin" /> Translating...
+              <Loader2 size={18} className="animate-spin" /> Translating...
             </>
           ) : (
             <>
-              <Languages size={20} /> Translate
+              <Languages size={18} /> Translate
             </>
           )}
         </button>
       </div>
 
-      {/* Text Areas + EXPORT */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Text Areas */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div>
-          <label className="block font-medium mb-1">Source Text</label>
+          <label className="block font-medium mb-1 text-sm">Source Text</label>
           <textarea
             value={sourceText}
             onChange={(e) => setSourceText(e.target.value)}
-            className="w-full p-3 border rounded font-mono text-sm"
-            rows={20}
-            placeholder="Paste your source legal text here..."
+            className="w-full p-3 border rounded font-mono text-xs sm:text-sm h-64 sm:h-80"
+            placeholder="Paste source text..."
           />
         </div>
         <div>
-          <div className="flex justify-between items-center mb-1">
-            <label className="font-medium">Translated Text</label>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-1 gap-2">
+            <label className="font-medium text-sm">Translated Text</label>
             <div className="flex gap-2">
               <button
                 onClick={debugTranslationOutput}
-                className="flex items-center gap-1 text-sm bg-gray-600 text-white px-2 py-1 rounded hover:bg-gray-700"
+                className="flex items-center gap-1 text-xs bg-gray-600 text-white px-2 py-1 rounded hover:bg-gray-700"
               >
                 Debug
               </button>
               <button
                 onClick={handleExportHTML}
                 disabled={!translatedText}
-                className="flex items-center gap-1 text-sm bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 disabled:bg-gray-400"
+                className="flex items-center gap-1 text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 disabled:bg-gray-400"
               >
-                <Download size={16} /> Export HTML
+                <Download size={14} /> Export
               </button>
             </div>
           </div>
           <textarea
             value={translatedText}
             readOnly
-            className="w-full p-3 border rounded font-mono text-sm bg-green-50"
-            rows={20}
-            placeholder="Translated text will appear here..."
+            className="w-full p-3 border rounded font-mono text-xs sm:text-sm bg-green-50 h-64 sm:h-80"
+            placeholder="Translation appears here..."
           />
         </div>
       </div>
