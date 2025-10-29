@@ -1,0 +1,56 @@
+{
+  "tabs": {
+    "useTabsAfterManualNumbers": true
+  },
+  "fonts": {
+    "main": {
+      "name": "Times New Roman",
+      "size": 12
+    },
+    "footnotes": {
+      "name": "Times New Roman",
+      "size": 10,
+      "language": "en-GB"
+    }
+  },
+  "margins": {
+    "top": 2.54,
+    "left": 3.17,
+    "right": 3.17,
+    "bottom": 2.54,
+    "gutter": 0,
+    "orientation": "portrait"
+  },
+  "cleaning": {
+    "removeMultipleSpaces": true,
+    "removeOptionalHyphens": true,
+    "replaceManualLineBreaks": true
+  },
+  "numbering": {
+    "letters": {
+      "style": "manual",
+      "format": "(a)"
+    },
+    "mainBody": {
+      "style": "period",
+      "format": "1."
+    },
+    "preamble": {
+      "style": "parenthesized",
+      "format": "(1)"
+    }
+  },
+  "paragraph": {
+    "alignment": "justified",
+    "indentLeft": 1,
+    "indentRight": 0,
+    "lineSpacing": "single",
+    "spacingAfter": 6,
+    "hangingIndent": 1,
+    "spacingBefore": 6
+  },
+  "pageBreaks": {
+    "beforeTables": false,
+    "beforeAnnexes": true
+  }
+}
