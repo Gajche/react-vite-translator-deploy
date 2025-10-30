@@ -34,7 +34,9 @@ function usePdfStyles() {
     };
   }, []);
 }
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+
+// FIX: Correct worker setup for react-pdf v7.5.0
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/legacy/build/pdf.worker.min.js`;
 
 /* ------------------------------------------------------------------- */
 /* 2. Language list – typed                                            */
@@ -138,6 +140,7 @@ export function TranslatorInterface() {
   const [selectedRule, setSelectedRule] = useState<FormattingRules | null>(
     null
   );
+  const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   /* ---------- Load settings & rules ---------- */
@@ -173,36 +176,46 @@ export function TranslatorInterface() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
+    setIsImporting(true);
 
-    if (file.name.endsWith(".txt")) {
-      reader.onload = (ev) => setSourceText(ev.target?.result as string);
-      reader.readAsText(file);
-    } else if (file.name.endsWith(".docx")) {
-      reader.onload = async (ev) => {
-        const result = await mammoth.extractRawText({
-          arrayBuffer: ev.target?.result as ArrayBuffer,
-        });
-        setSourceText(result.value);
-      };
-      reader.readAsArrayBuffer(file);
-    } else if (file.name.endsWith(".pdf")) {
-      reader.onload = async (ev) => {
-        const pdf = await pdfjs.getDocument({
-          data: ev.target?.result as ArrayBuffer,
-        }).promise;
-        let full = "";
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const content = await page.getTextContent();
-          full += content.items.map((item: any) => item.str).join(" ") + "\n";
+    try {
+      const ext = file.name.split(".").pop()?.toLowerCase();
+
+      if (ext === "txt") {
+        const text = await file.text();
+        setSourceText(text);
+      } else if (ext === "docx") {
+        const arrayBuffer = await file.arrayBuffer();
+        const docxResult = await mammoth.extractRawText({ arrayBuffer });
+        setSourceText(docxResult.value);
+      } else if (ext === "pdf") {
+        // PDF fallback approach
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+          let full = "";
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            full += content.items.map((item: any) => item.str).join(" ") + "\n";
+          }
+          setSourceText(full.trim());
+        } catch (pdfError) {
+          console.error("PDF extraction failed:", pdfError);
+          alert(
+            "PDF import failed. Please use TXT or DOCX files for now, or convert your PDF to another format."
+          );
         }
-        setSourceText(full.trim());
-      };
-      reader.readAsArrayBuffer(file);
+      } else {
+        alert("Unsupported file type. Please use TXT, DOCX, or PDF files.");
+      }
+    } catch (err) {
+      console.error("File import failed:", err);
+      alert("File import failed. Please try another file format.");
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
-
-    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   /* ---------- Chunked translation ---------- */
@@ -507,8 +520,16 @@ export function TranslatorInterface() {
             Source Text ({sourceText.split(/\s+/).filter((w) => w).length}{" "}
             words)
           </label>
-          <label className="flex items-center gap-1 text-xs bg-indigo-600 text-white px-2 py-1 rounded cursor-pointer hover:bg-indigo-700">
-            <Upload size={14} /> Import
+          <label className="flex items-center gap-2 text-xs bg-indigo-600 text-white px-2 py-1 rounded cursor-pointer hover:bg-indigo-700">
+            {isImporting ? (
+              <>
+                <Loader2 size={14} className="animate-spin" /> Importing...
+              </>
+            ) : (
+              <>
+                <Upload size={14} /> Import
+              </>
+            )}
             <input
               ref={fileInputRef}
               type="file"
