@@ -13,6 +13,10 @@ import { Languages, Download, Settings, Loader2, Upload } from "lucide-react";
 import mammoth from "mammoth";
 import { pdfjs } from "react-pdf";
 
+import { exportToDOCX } from "../lib/docxExporter";
+
+// import { exportStructuredToDOCX } from "../lib/structuredDocxExporter";
+
 /* ------------------------------------------------------------------- */
 /* 1. PDF CSS (CDN – no Vite import)                                   */
 /* ------------------------------------------------------------------- */
@@ -141,6 +145,7 @@ export function TranslatorInterface() {
     null
   );
   const [isImporting, setIsImporting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   /* ---------- Load settings & rules ---------- */
@@ -215,6 +220,36 @@ export function TranslatorInterface() {
     } finally {
       setIsImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  /* File Export to DOCX - Simple Approach */
+  const handleExportDOCX = async () => {
+    if (!translatedText) return alert("No translation to export");
+
+    try {
+      setIsExporting(true);
+
+      // Use the original translated text with its natural paragraph structure
+      const blob = await exportToDOCX(translatedText, sourceLang, targetLang, {
+        title: `Translation from ${sourceLang.toUpperCase()} to ${targetLang.toUpperCase()}`,
+        author: "Translation App",
+      });
+
+      // Create download link
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `translation-${sourceLang}-to-${targetLang}-${Date.now()}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("DOCX export failed:", error);
+      alert("DOCX export failed. Please try again.");
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -560,10 +595,22 @@ export function TranslatorInterface() {
             </button>
             <button
               onClick={handleExportHTML}
-              disabled={!translatedText}
+              disabled={!translatedText || isExporting}
               className="flex items-center gap-1 text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 disabled:bg-gray-400"
             >
-              <Download size={14} /> Export
+              <Download size={14} /> Export HTML
+            </button>
+            <button
+              onClick={handleExportDOCX}
+              disabled={!translatedText || isExporting}
+              className="flex items-center gap-1 text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 disabled:bg-gray-400"
+            >
+              {isExporting ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Download size={14} />
+              )}
+              Export DOCX
             </button>
           </div>
         </div>

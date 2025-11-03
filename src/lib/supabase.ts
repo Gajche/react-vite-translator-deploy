@@ -30,6 +30,9 @@ export interface Terminology {
   source_lang: string;
   target_lang: string;
   category: string;
+  context?: string;
+  imported_from?: string;
+  imported_at?: string;
   created_at?: string;
   updated_at?: string;
 }
