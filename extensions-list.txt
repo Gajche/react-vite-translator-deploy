@@ -1,0 +1,17 @@
+anbuselvanrocky.bootstrap5-vscode
+atlassian.atlascode
+bmewburn.vscode-intelephense-client
+brapifra.phpserver
+devsense.composer-php-vscode
+devsense.phptools-vscode
+devsense.profiler-php-vscode
+eamodio.gitlens
+esbenp.prettier-vscode
+glenn2223.live-sass
+google.geminicodeassist
+hediet.vscode-drawio
+numso.vscode-tailwindcss-with-hex-colors
+redhat.vscode-yaml
+ritwickdey.liveserver
+techer.open-in-browser
+yzane.markdown-pdf

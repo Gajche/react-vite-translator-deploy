@@ -1,7 +1,18 @@
 // src/components/TerminologyManager.tsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase, Terminology } from "../lib/supabase";
-import { Plus, Trash2, Edit2, Download as DownloadIcon } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Edit2,
+  Download as DownloadIcon,
+  Upload,
+  Loader2,
+} from "lucide-react";
+import { processTMXFile } from "../lib/tmxParser";
+
+// CORRECT IMPORT: from real supabase lib
+// import { ensureTerminologySchema } from "../lib/supabase";
 
 export function TerminologyManager() {
   const [terms, setTerms] = useState<Terminology[]>([]);
@@ -18,6 +29,12 @@ export function TerminologyManager() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterSourceLang, setFilterSourceLang] = useState("");
   const [filterTargetLang, setFilterTargetLang] = useState("");
+  const [isImportingTMX, setIsImportingTMX] = useState(false);
+  const [importStats, setImportStats] = useState<{
+    imported: number;
+    skipped: number;
+  } | null>(null);
+  const tmxFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadTerms();
@@ -27,16 +44,106 @@ export function TerminologyManager() {
     let q = supabase
       .from("terminology")
       .select("*")
-      .order("term", { ascending: true });
+      .order("created_at", { ascending: false });
+
     if (searchTerm)
       q = q.or(
         `term.ilike.%${searchTerm}%,translation.ilike.%${searchTerm}%,definition.ilike.%${searchTerm}%`
       );
     if (filterSourceLang) q = q.eq("source_lang", filterSourceLang);
     if (filterTargetLang) q = q.eq("target_lang", filterTargetLang);
+
     const { data } = await q;
     if (data) setTerms(data);
   }
+
+  // Verify if the three new columns exist
+  const verifyColumns = async () => {
+    const { error } = await supabase
+      .from("terminology")
+      .select("context, imported_from, imported_at")
+      .limit(1);
+
+    if (error) {
+      alert("Columns missing: " + error.message);
+    } else {
+      alert(
+        "All three columns (context, imported_from, imported_at) are present!"
+      );
+    }
+  };
+
+  // Test DB connection
+  const testConnection = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("terminology")
+        .select("count")
+        .limit(1);
+
+      if (error) {
+        console.error("Connection test failed:", error);
+        alert("Database connection failed: " + error.message);
+      } else {
+        console.log("Database connection successful!", data);
+        alert("Database connection successful!");
+      }
+    } catch (e: any) {
+      console.error("Connection test error:", e);
+      alert("Connection test failed: " + e.message);
+    }
+  };
+
+  // TMX Import Handler with batch upsert
+  const handleTMXImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImportingTMX(true);
+    setImportStats(null);
+
+    try {
+      const entries = await processTMXFile(file);
+      let imported = 0;
+      let skipped = 0;
+
+      const BATCH = 100;
+      for (let i = 0; i < entries.length; i += BATCH) {
+        const batch = entries.slice(i, i + BATCH).map((e) => ({
+          term: e.source,
+          translation: e.target,
+          source_lang: e.sourceLang,
+          target_lang: e.targetLang,
+          definition: e.note ?? "",
+          context: e.context ?? "",
+          category: "TMX Import",
+          imported_from: file.name,
+          imported_at: new Date().toISOString(),
+        }));
+
+        const { error } = await supabase.from("terminology").upsert(batch, {
+          onConflict: "term,translation,source_lang,target_lang",
+          ignoreDuplicates: true,
+        });
+
+        if (error) {
+          console.error("Batch error:", error);
+          skipped += batch.length;
+        } else {
+          imported += batch.length;
+        }
+      }
+
+      setImportStats({ imported, skipped: entries.length - imported });
+      await loadTerms();
+    } catch (err: any) {
+      console.error(err);
+      alert("TMX import failed: " + err.message);
+    } finally {
+      setIsImportingTMX(false);
+      if (tmxFileInputRef.current) tmxFileInputRef.current.value = "";
+    }
+  };
 
   const uniqueSourceLangs = [
     ...new Set(terms.map((t) => t.source_lang)),
@@ -54,6 +161,9 @@ export function TerminologyManager() {
         "target_lang",
         "category",
         "definition",
+        "context",
+        "imported_from",
+        "imported_at",
         "created_at",
       ],
       ...terms.map((t) => [
@@ -61,13 +171,19 @@ export function TerminologyManager() {
         t.translation,
         t.source_lang,
         t.target_lang,
-        t.category,
-        t.definition,
+        t.category || "",
+        t.definition || "",
+        t.context || "",
+        t.imported_from || "",
+        t.imported_at || "",
         t.created_at || "",
       ]),
     ]
-      .map((r) => r.join(","))
+      .map((r) =>
+        r.map((field) => `"${field?.toString().replace(/"/g, '""')}"`).join(",")
+      )
       .join("\n");
+
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -85,20 +201,89 @@ export function TerminologyManager() {
           Terminology ({terms.length})
         </h2>
         <div className="flex gap-2 w-full sm:w-auto">
+          {/* TMX Import */}
+          <label className="flex items-center gap-1 px-3 py-2 bg-purple-600 text-white rounded text-xs sm:text-sm hover:bg-purple-700 cursor-pointer">
+            {isImportingTMX ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Importing...
+              </>
+            ) : (
+              <>
+                <Upload size={16} />
+                Import TMX
+              </>
+            )}
+            <input
+              ref={tmxFileInputRef}
+              type="file"
+              accept=".tmx"
+              onChange={handleTMXImport}
+              className="hidden"
+            />
+          </label>
+
           <button
             onClick={exportToCSV}
             className="flex items-center gap-1 px-3 py-2 bg-gray-600 text-white rounded text-xs sm:text-sm hover:bg-gray-700"
           >
             <DownloadIcon size={16} /> CSV
           </button>
+
           <button
             onClick={() => setIsAdding(!isAdding)}
             className="flex items-center gap-1 px-3 py-2 bg-blue-600 text-white rounded text-xs sm:text-sm hover:bg-blue-700"
           >
             <Plus size={16} /> Add
           </button>
+
+          {/* Debug: Check DB */}
+          <button
+            onClick={async () => {
+              const { data } = await supabase
+                .from("terminology")
+                .select("term, translation, source_lang, target_lang, category")
+                .order("created_at", { ascending: false })
+                .limit(50);
+              console.log("Current terms in database:", data);
+              alert(
+                `Check console for current terms. Found: ${
+                  data?.length || 0
+                } terms`
+              );
+            }}
+            className="flex items-center gap-1 px-3 py-2 bg-yellow-600 text-white rounded text-xs sm:text-sm hover:bg-yellow-700"
+          >
+            Debug: Check DB
+          </button>
+
+          {/* Test DB Connection */}
+          <button
+            onClick={testConnection}
+            className="flex items-center gap-1 px-3 py-2 bg-yellow-600 text-white rounded text-xs sm:text-sm hover:bg-yellow-700"
+          >
+            Test DB
+          </button>
+
+          {/* Verify Columns */}
+          <button
+            onClick={verifyColumns}
+            className="flex items-center gap-1 px-3 py-2 bg-indigo-600 text-white rounded text-xs sm:text-sm hover:bg-indigo-700"
+          >
+            Verify Columns
+          </button>
         </div>
       </div>
+
+      {/* Import Stats */}
+      {importStats && (
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded text-sm">
+          <p className="text-blue-800">
+            Imported: <strong>{importStats.imported}</strong> terms | Skipped:{" "}
+            <strong>{importStats.skipped}</strong> (duplicates)
+          </p>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
@@ -205,8 +390,17 @@ export function TerminologyManager() {
                     .update(formData)
                     .eq("id", editingId);
                 else await supabase.from("terminology").insert([formData]);
+
                 setIsAdding(false);
                 setEditingId(null);
+                setFormData({
+                  term: "",
+                  translation: "",
+                  definition: "",
+                  source_lang: "en",
+                  target_lang: "mk",
+                  category: "",
+                });
                 loadTerms();
               }}
               className="px-3 py-1 bg-green-600 text-white rounded text-sm"
@@ -217,6 +411,14 @@ export function TerminologyManager() {
               onClick={() => {
                 setIsAdding(false);
                 setEditingId(null);
+                setFormData({
+                  term: "",
+                  translation: "",
+                  definition: "",
+                  source_lang: "en",
+                  target_lang: "mk",
+                  category: "",
+                });
               }}
               className="px-3 py-1 bg-gray-500 text-white rounded text-sm"
             >
@@ -242,6 +444,11 @@ export function TerminologyManager() {
                 {t.category && (
                   <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded">
                     {t.category}
+                  </span>
+                )}
+                {t.imported_from && (
+                  <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded">
+                    TMX
                   </span>
                 )}
               </div>
@@ -276,15 +483,33 @@ export function TerminologyManager() {
             {t.definition && (
               <p className="text-gray-600 text-xs">{t.definition}</p>
             )}
+            {t.context && (
+              <p className="text-gray-500 text-xs italic">
+                Context: {t.context}
+              </p>
+            )}
             <p className="text-xs text-gray-500">
-              Added:{" "}
-              {t.created_at ? new Date(t.created_at).toLocaleDateString() : "—"}
+              {t.imported_from ? (
+                <>
+                  Imported from {t.imported_from} on{" "}
+                  {t.imported_at
+                    ? new Date(t.imported_at).toLocaleDateString()
+                    : "unknown date"}
+                </>
+              ) : (
+                <>
+                  Added:{" "}
+                  {t.created_at
+                    ? new Date(t.created_at).toLocaleDateString()
+                    : "—"}
+                </>
+              )}
             </p>
           </div>
         ))}
         {terms.length === 0 && (
           <p className="text-center text-gray-500 py-8">
-            No terms yet. Auto-learned terms appear here.
+            No terms yet. Add terms manually or import from TMX files.
           </p>
         )}
       </div>
